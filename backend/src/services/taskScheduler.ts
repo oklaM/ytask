@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase } from '../database/database.js';
 import { Task, ExecutionLog } from '../types/index.js';
+import { sandboxExecutor } from './sandboxExecutor.js';
 import logger from '../utils/logger.js';
 
 class TaskScheduler {
@@ -154,22 +155,51 @@ class TaskScheduler {
         return await response.json();
 
       case 'command':
-        // 模拟命令执行
-        const { exec } = await import('child_process');
-        return new Promise((resolve, reject) => {
-          exec(task.config.command, (error, stdout, stderr) => {
-            if (error) {
-              reject(new Error(stderr || error.message));
-            } else {
-              resolve({ stdout, stderr });
-            }
-          });
+        // 使用沙盒执行器安全地执行命令
+        const command = task.config.command;
+        if (!command || typeof command !== 'string') {
+          throw new Error('命令配置无效: command 必须是字符串');
+        }
+        
+        const result = await sandboxExecutor.executeCommand(command, task.id, {
+          timeout: task.timeout
         });
+        
+        if (!result.success) {
+          throw new Error(`命令执行失败: ${result.stderr || '未知错误'}`);
+        }
+        
+        return {
+          stdout: result.stdout,
+          stderr: result.stderr,
+          code: result.code,
+          duration: result.duration
+        };
 
       case 'script':
-        // 模拟脚本执行
-        // 这里可以实现具体的脚本执行逻辑
-        return { message: '脚本执行完成', task: task.name };
+        // 使用沙盒执行器安全地执行脚本
+        const scriptContent = task.config.script;
+        const language = task.config.language || 'javascript';
+        
+        if (!scriptContent || typeof scriptContent !== 'string') {
+          throw new Error('脚本配置无效: script 必须是字符串');
+        }
+        
+        const scriptResult = await sandboxExecutor.executeScript(scriptContent, language, task.id, {
+          timeout: task.timeout
+        });
+        
+        if (!scriptResult.success) {
+          throw new Error(`脚本执行失败: ${scriptResult.stderr || '未知错误'}`);
+        }
+        
+        return {
+          stdout: scriptResult.stdout,
+          stderr: scriptResult.stderr,
+          code: scriptResult.code,
+          duration: scriptResult.duration,
+          language: language
+        };
 
       default:
         throw new Error(`不支持的任务类型: ${task.type}`);
