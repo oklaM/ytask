@@ -1,0 +1,135 @@
+.App {
+  text-align: center;
+}
+
+.stat-card {
+  transition: all 0.3s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.task-form-section {
+  margin-bottom: 24px;
+}
+
+.task-form-section .ant-card-head {
+  background: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+/* 表格样式优化 */
+.ant-table-thead > tr > th {
+  background: #fafafa;
+  font-weight: 600;
+}
+
+/* 搜索和筛选区域样式 */
+.search-filter-area {
+  background: #fafafa;
+  padding: 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+/* 批量操作按钮组 */
+.batch-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+/* 响应式布局 */
+@media (max-width: 768px) {
+  .ant-layout-sider {
+    display: none;
+  }
+  
+  .ant-layout-header {
+    padding: 0 16px;
+  }
+  
+  .ant-layout-content {
+    padding: 16px !important;
+  }
+}
+
+/* 任务状态标签样式 */
+.status-tag-active {
+  background: #f6ffed;
+  border-color: #52c41a;
+  color: #52c41a;
+}
+
+.status-tag-paused {
+  background: #fffbe6;
+  border-color: #faad14;
+  color: #faad14;
+}
+
+.status-tag-completed {
+  background: #f5f5f5;
+  border-color: #d9d9d9;
+  color: #8c8c8c;
+}
+
+/* 日志表格样式 */
+.log-table .ant-table-tbody > tr:hover > td {
+  background: #fafafa;
+}
+
+.log-table .ant-table-cell {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 错误信息样式 */
+.error-message {
+  color: #ff4d4f;
+  background: #fff2f0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #ffccc7;
+  font-size: 12px;
+  max-width: 200px;
+}
+
+/* 加载状态样式 */
+.loading-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+}
+
+/* 空状态样式 */
+.empty-state {
+  text-align: center;
+  padding: 40px 0;
+  color: #8c8c8c;
+}
+
+.empty-state .anticon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+/* 响应式网格 */
+.responsive-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+/* 卡片阴影效果 */
+.ant-card {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03), 0 1px 6px rgba(0, 0, 0, 0.03), 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.ant-card:hover {
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+}
