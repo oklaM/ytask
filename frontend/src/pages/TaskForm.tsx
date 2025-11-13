@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Select, Button, Card, Space, InputNumber, message, DatePicker, Modal, Result, Spin, Alert, Typography, Divider, Popover, Tag } from 'antd';
+import { Form, Input, Select, Button, Card, Space, InputNumber, message, DatePicker, Modal, Result, Spin, Alert, Typography, Divider, Popover, Tag, Tabs, Collapse } from 'antd';
+import dayjs from 'dayjs';
 import { useParams, useNavigate } from 'react-router-dom';
 import { taskApi } from '../services/api';
 import { PlayCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, InfoCircleOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import VisualTimerSelector from '../components/VisualTimerSelector';
+import LunarCalendarSelector from '../components/LunarCalendarSelector';
+import CountdownTimer from '../components/CountdownTimer';
+import ConditionTrigger from '../components/ConditionTrigger';
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -67,8 +72,9 @@ const TaskForm: React.FC = () => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [triggerType, setTriggerType] = useState<'cron' | 'interval' | 'date'>('cron');
+  const [triggerType, setTriggerType] = useState<'cron' | 'interval' | 'date' | 'visual' | 'lunar' | 'countdown' | 'conditional'>('visual');
   const [taskType, setTaskType] = useState<'http' | 'command' | 'script'>('command');
+  const [activeTriggerTab, setActiveTriggerTab] = useState('basic');
   
   // 预执行相关状态
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -86,11 +92,58 @@ const TaskForm: React.FC = () => {
   const loadTask = async () => {
     try {
       const task = await taskApi.getTask(id!);
-      form.setFieldsValue({
-        ...task,
-        triggerConfig: task.triggerConfig,
-        config: task.config
-      });
+      
+      // 根据任务类型设置表单值
+      const formValues: any = {
+        name: task.name,
+        description: task.description,
+        category: task.category,
+        maxRetries: task.maxRetries,
+        retryInterval: task.retryInterval,
+        timeout: task.timeout,
+        type: task.type,
+        // 两个触发器类型字段都需要设置，因为它们在两个不同的选项卡中
+        triggerType: task.triggerType,
+        triggerTypeAdvanced: task.triggerType
+      };
+      
+      // 根据任务类型设置配置
+      if (task.type === 'http') {
+        formValues.httpUrl = task.config?.url || '';
+        formValues.httpMethod = task.config?.method || 'GET';
+        formValues.httpHeaders = task.config?.headers ? JSON.stringify(task.config.headers, null, 2) : '';
+        formValues.httpBody = task.config?.body ? JSON.stringify(task.config.body, null, 2) : '';
+      } else if (task.type === 'command') {
+        formValues.command = task.config?.command || '';
+      } else if (task.type === 'script') {
+        formValues.script = task.config?.script || '';
+      }
+      
+      // 根据触发类型设置触发配置
+      if (task.triggerType === 'cron') {
+        formValues.cronExpression = task.triggerConfig?.cron || '';
+        setActiveTriggerTab('advanced');
+      } else if (task.triggerType === 'interval') {
+        formValues.interval = task.triggerConfig?.interval ? task.triggerConfig.interval / 1000 : 0; // 毫秒转秒
+        setActiveTriggerTab('basic');
+      } else if (task.triggerType === 'date') {
+        formValues.specificDate = task.triggerConfig?.date ? dayjs(task.triggerConfig.date) : null;
+        setActiveTriggerTab('basic');
+      } else if (task.triggerType === 'visual') {
+        formValues.visualConfig = task.triggerConfig;
+        setActiveTriggerTab('basic');
+      } else if (task.triggerType === 'lunar') {
+        formValues.lunarConfig = task.triggerConfig;
+        setActiveTriggerTab('basic');
+      } else if (task.triggerType === 'countdown') {
+        formValues.countdownConfig = task.triggerConfig;
+        setActiveTriggerTab('basic');
+      } else if (task.triggerType === 'conditional') {
+        formValues.conditionalConfig = task.triggerConfig;
+        setActiveTriggerTab('advanced');
+      }
+      
+      form.setFieldsValue(formValues);
       setTriggerType(task.triggerType);
       setTaskType(task.type);
     } catch (error) {
@@ -111,12 +164,16 @@ const TaskForm: React.FC = () => {
         }
       }
 
+      // 获取配置数据（从表单或自定义组件）
+      const triggerConfig = getTriggerConfig(values);
+      const taskConfig = getTaskConfig(values);
+
       const taskData = {
         ...values,
         triggerType,
         type: taskType,
-        triggerConfig: getTriggerConfig(values),
-        config: getTaskConfig(values)
+        triggerConfig,
+        config: taskConfig
       };
 
       if (isEditing) {
@@ -185,6 +242,18 @@ const TaskForm: React.FC = () => {
         return { interval: values.interval * 1000 }; // 转换为毫秒
       case 'date':
         return { date: values.specificDate?.toISOString() };
+      case 'visual':
+        // 从可视化选择器获取配置
+        return values.visualConfig || {};
+      case 'lunar':
+        // 从农历选择器获取配置
+        return values.lunarConfig || {};
+      case 'countdown':
+        // 从倒计时选择器获取配置
+        return values.countdownConfig || {};
+      case 'conditional':
+        // 从条件触发选择器获取配置
+        return values.conditionalConfig || {};
       default:
         return {};
     }
@@ -285,88 +354,146 @@ const TaskForm: React.FC = () => {
 
         {/* 触发设置 */}
         <Card title="触发设置" className="task-form-section">
-          <Form.Item
-            name="triggerType"
-            label="触发类型"
-            initialValue="cron"
-          >
-            <Select onChange={setTriggerType}>
-              <Option value="cron">Cron表达式</Option>
-              <Option value="interval">固定间隔</Option>
-              <Option value="date">特定时间</Option>
-            </Select>
-          </Form.Item>
-
-          {triggerType === 'cron' && (
-            <>
-              <Form.Item
-                name="cronExpression"
-                label={
-                  <span>
-                    Cron表达式
-                    <Popover 
-                      title="常用Cron表达式示例" 
-                      content={
-                        <div style={{ maxWidth: 400 }}>
-                          {TASK_EXAMPLES.cron.map((example, index) => (
-                            <div key={index} style={{ marginBottom: 8 }}>
-                              <Button 
-                                type="link" 
-                                size="small" 
-                                onClick={() => applyExample('cron', example)}
-                                icon={<ThunderboltOutlined />}
-                              >
-                                {example.label}
-                              </Button>
-                              <br />
-                              <Tag color="blue">{example.value}</Tag>
-                              <span style={{ fontSize: 12, color: '#666' }}> - {example.desc}</span>
-                            </div>
-                          ))}
-                        </div>
-                      }
+          <Tabs
+            activeKey={activeTriggerTab}
+            onChange={setActiveTriggerTab}
+            items={[
+              {
+                key: 'basic',
+                label: '基础定时',
+                children: (
+                  <div>
+                    <Form.Item
+                      name="triggerType"
+                      label="触发类型"
+                      initialValue="visual"
                     >
-                      <Button type="link" size="small" icon={<InfoCircleOutlined />}>
-                        查看示例
-                      </Button>
-                    </Popover>
-                  </span>
-                }
-                rules={[{ required: true, message: '请输入Cron表达式' }]}
-                extra="例如：0 0 * * *（每天午夜执行）"
-              >
-                <Input placeholder="请输入Cron表达式" />
-              </Form.Item>
-            </>
-          )}
+                      <Select onChange={setTriggerType}>
+                        <Option value="visual">可视化定时</Option>
+                        <Option value="countdown">倒计时触发</Option>
+                        <Option value="lunar">农历定时</Option>
+                        <Option value="interval">固定间隔</Option>
+                        <Option value="date">特定时间</Option>
+                      </Select>
+                    </Form.Item>
 
-          {triggerType === 'interval' && (
-            <Form.Item
-              name="interval"
-              label="间隔时间（秒）"
-              rules={[{ required: true, message: '请输入间隔时间' }]}
-            >
-              <InputNumber 
-                min={1} 
-                style={{ width: '100%' }} 
-                placeholder="请输入间隔秒数" 
-              />
-            </Form.Item>
-          )}
+                    {triggerType === 'visual' && (
+                      <Form.Item name="visualConfig">
+                        <VisualTimerSelector />
+                      </Form.Item>
+                    )}
 
-          {triggerType === 'date' && (
-            <Form.Item
-              name="specificDate"
-              label="执行时间"
-              rules={[{ required: true, message: '请选择执行时间' }]}
-            >
-              <DatePicker 
-                showTime 
-                style={{ width: '100%' }} 
-                placeholder="请选择执行时间" 
-              />
-            </Form.Item>
-          )}
+                    {triggerType === 'countdown' && (
+                      <Form.Item name="countdownConfig">
+                        <CountdownTimer />
+                      </Form.Item>
+                    )}
+
+                    {triggerType === 'lunar' && (
+                      <Form.Item name="lunarConfig">
+                        <LunarCalendarSelector />
+                      </Form.Item>
+                    )}
+
+                    {triggerType === 'interval' && (
+                      <Form.Item
+                        name="interval"
+                        label="间隔时间（秒）"
+                        rules={[{ required: true, message: '请输入间隔时间' }]}
+                      >
+                        <InputNumber 
+                          min={1} 
+                          style={{ width: '100%' }} 
+                          placeholder="请输入间隔秒数" 
+                        />
+                      </Form.Item>
+                    )}
+
+                    {triggerType === 'date' && (
+                      <Form.Item
+                        name="specificDate"
+                        label="执行时间"
+                        rules={[{ required: true, message: '请选择执行时间' }]}
+                      >
+                        <DatePicker 
+                          showTime 
+                          style={{ width: '100%' }} 
+                          placeholder="请选择执行时间" 
+                        />
+                      </Form.Item>
+                    )}
+                  </div>
+                )
+              },
+              {
+                key: 'advanced',
+                label: '高级选项',
+                children: (
+                  <div>
+                    <Form.Item
+                      name="triggerTypeAdvanced"
+                      label="触发类型"
+                      initialValue="cron"
+                    >
+                      <Select onChange={setTriggerType}>
+                        <Option value="cron">Cron表达式</Option>
+                        <Option value="conditional">条件触发</Option>
+                      </Select>
+                    </Form.Item>
+
+                    {triggerType === 'cron' && (
+                      <>
+                        <Form.Item
+                          name="cronExpression"
+                          label={
+                            <span>
+                              Cron表达式
+                              <Popover 
+                                title="常用Cron表达式示例" 
+                                content={
+                                  <div style={{ maxWidth: 400 }}>
+                                    {TASK_EXAMPLES.cron.map((example, index) => (
+                                      <div key={index} style={{ marginBottom: 8 }}>
+                                        <Button 
+                                          type="link" 
+                                          size="small" 
+                                          onClick={() => applyExample('cron', example)}
+                                          icon={<ThunderboltOutlined />}
+                                        >
+                                          {example.label}
+                                        </Button>
+                                        <br />
+                                        <Tag color="blue">{example.value}</Tag>
+                                        <span style={{ fontSize: 12, color: '#666' }}> - {example.desc}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                }
+                              >
+                                <Button type="link" size="small" icon={<InfoCircleOutlined />}>
+                                  查看示例
+                                </Button>
+                              </Popover>
+                            </span>
+                          }
+                          rules={[{ required: true, message: '请输入Cron表达式' }]}
+                          extra="例如：0 0 * * *（每天午夜执行）"
+                        >
+                          <Input placeholder="请输入Cron表达式" />
+                        </Form.Item>
+                      </>
+                    )}
+
+                    {triggerType === 'conditional' && (
+                      <Form.Item name="conditionalConfig">
+                        <ConditionTrigger />
+                      </Form.Item>
+                    )}
+                  </div>
+                )
+              }
+            ]}
+          />
         </Card>
 
         {/* 任务配置 */}

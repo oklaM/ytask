@@ -33,7 +33,7 @@ export async function initializeDatabase(): Promise<SqliteDatabase> {
       description TEXT,
       type TEXT NOT NULL CHECK(type IN ('http', 'command', 'script')),
       config TEXT NOT NULL,
-      trigger_type TEXT NOT NULL CHECK(trigger_type IN ('cron', 'interval', 'date')),
+      trigger_type TEXT NOT NULL CHECK(trigger_type IN ('cron', 'interval', 'date', 'visual', 'lunar', 'countdown', 'conditional')),
       trigger_config TEXT NOT NULL,
       status TEXT NOT NULL CHECK(status IN ('active', 'paused', 'completed')),
       category TEXT,

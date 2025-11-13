@@ -77,6 +77,63 @@ class TaskScheduler {
           this.runningTasks.set(task.id, timeoutId);
           nextExecutionTime = task.triggerConfig.date;
         }
+      
+      } else if (task.triggerType === 'visual' && task.triggerConfig.visualType) {
+        // 可视化定时调度
+        nextExecutionTime = this.calculateVisualScheduleTime(task);
+        if (nextExecutionTime) {
+          const delay = new Date(nextExecutionTime).getTime() - Date.now();
+          if (delay > 0) {
+            const timeoutId = setTimeout(() => {
+              this.executeTask(task);
+              // 如果是循环任务，重新调度
+              if (task.triggerConfig.visualType !== 'once') {
+                this.scheduleTask(task);
+              }
+            }, delay);
+            this.runningTasks.set(task.id, timeoutId);
+          }
+        }
+        
+      } else if (task.triggerType === 'lunar' && task.triggerConfig.lunarDay) {
+        // 农历定时调度
+        nextExecutionTime = this.calculateLunarScheduleTime(task);
+        if (nextExecutionTime) {
+          const delay = new Date(nextExecutionTime).getTime() - Date.now();
+          if (delay > 0) {
+            const timeoutId = setTimeout(() => {
+              this.executeTask(task);
+              // 如果设置了每年重复，重新调度
+              if (task.triggerConfig.lunarRepeat) {
+                this.scheduleTask(task);
+              }
+            }, delay);
+            this.runningTasks.set(task.id, timeoutId);
+          }
+        }
+        
+      } else if (task.triggerType === 'countdown' && task.triggerConfig.countdownStartTime) {
+        // 倒计时调度
+        const startTime = new Date(task.triggerConfig.countdownStartTime);
+        const totalSeconds = (task.triggerConfig.countdownHours || 0) * 3600 + 
+                           (task.triggerConfig.countdownMinutes || 0) * 60 + 
+                           (task.triggerConfig.countdownSeconds || 0);
+        const targetTime = new Date(startTime.getTime() + totalSeconds * 1000);
+        
+        if (targetTime.getTime() > Date.now()) {
+          const timeoutId = setTimeout(() => {
+            this.executeTask(task);
+          }, targetTime.getTime() - Date.now());
+          
+          this.runningTasks.set(task.id, timeoutId);
+          nextExecutionTime = targetTime.toISOString();
+        }
+        
+      } else if (task.triggerType === 'conditional') {
+        // 条件触发调度 - 需要额外的监控机制
+        // 这里简化为立即执行，实际项目中需要实现系统状态监控
+        nextExecutionTime = this.calculateConditionalScheduleTime(task);
+        logger.info(`条件触发任务 ${task.name} 已注册，等待条件满足`);
       }
 
       // 更新下次执行时间到数据库
@@ -152,6 +209,296 @@ class TaskScheduler {
       return null;
     } catch (error) {
       logger.error(`计算下次执行时间失败: ${task.id}`, error);
+      return null;
+    }
+  }
+
+  /**
+   * 计算可视化定时执行时间
+   */
+  private calculateVisualScheduleTime(task: Task): string | null {
+    try {
+      const now = new Date();
+      const config = task.triggerConfig;
+      
+      if (!config.visualType) return null;
+
+      switch (config.visualType) {
+        case 'once':
+          // 一次性定时：每天固定时间
+          if (config.visualTime) {
+            const [hours, minutes] = config.visualTime.split(':').map(Number);
+            const targetTime = new Date(now);
+            targetTime.setHours(hours, minutes, 0, 0);
+            
+            if (targetTime <= now) {
+              targetTime.setDate(targetTime.getDate() + 1);
+            }
+            return targetTime.toISOString();
+          }
+          break;
+
+        case 'minute':
+          // 分钟循环
+          const minuteInterval = (config.visualValue || 1) * 60 * 1000;
+          const nextMinuteTime = new Date(now.getTime() + minuteInterval);
+          return nextMinuteTime.toISOString();
+
+        case 'hour':
+          // 小时循环
+          const hourInterval = (config.visualValue || 1) * 60 * 60 * 1000;
+          const nextHourTime = new Date(now.getTime() + hourInterval);
+          return nextHourTime.toISOString();
+
+        case 'day':
+          // 天循环
+          if (config.visualTime) {
+            const [hours, minutes] = config.visualTime.split(':').map(Number);
+            const days = config.visualValue || 1;
+            let targetTime = new Date(now);
+            targetTime.setDate(targetTime.getDate() + days);
+            targetTime.setHours(hours, minutes, 0, 0);
+            
+            if (targetTime <= now) {
+              targetTime.setDate(targetTime.getDate() + days);
+            }
+            return targetTime.toISOString();
+          }
+          break;
+
+        case 'week':
+          // 周循环
+          if (config.visualTime && config.visualDays && config.visualDays.length > 0) {
+            const [hours, minutes] = config.visualTime.split(':').map(Number);
+            const currentDay = now.getDay();
+            const nextDay = Math.min(...config.visualDays.filter(d => d > currentDay));
+            
+            let targetTime = new Date(now);
+            if (nextDay > currentDay) {
+              targetTime.setDate(targetTime.getDate() + (nextDay - currentDay));
+            } else {
+              targetTime.setDate(targetTime.getDate() + (7 - currentDay + nextDay));
+            }
+            targetTime.setHours(hours, minutes, 0, 0);
+            return targetTime.toISOString();
+          }
+          break;
+
+        case 'month':
+          // 月循环
+          if (config.visualTime && config.visualDate) {
+            const [hours, minutes] = config.visualTime.split(':').map(Number);
+            let targetTime = new Date(now);
+            targetTime.setMonth(targetTime.getMonth() + 1);
+            targetTime.setDate(config.visualDate);
+            targetTime.setHours(hours, minutes, 0, 0);
+            
+            if (targetTime <= now) {
+              targetTime.setMonth(targetTime.getMonth() + 1);
+            }
+            return targetTime.toISOString();
+          }
+          break;
+      }
+      
+      return null;
+    } catch (error) {
+      logger.error(`计算可视化定时时间失败: ${task.id}`, error);
+      return null;
+    }
+  }
+
+  /**
+   * 计算农历定时执行时间
+   */
+  private calculateLunarScheduleTime(task: Task): string | null {
+    try {
+      const config = task.triggerConfig;
+      if (!config.lunarYear || !config.lunarMonth || !config.lunarDay) return null;
+
+      // 简化处理：将农历日期转换为公历日期
+      // 实际项目中应使用专业的农历计算库
+      const now = new Date();
+      
+      // 计算当前年份对应的农历日期（简化版）
+      const targetDate = new Date(now.getFullYear(), config.lunarMonth - 1, config.lunarDay);
+      
+      if (targetDate <= now) {
+        targetDate.setFullYear(targetDate.getFullYear() + 1);
+      }
+      
+      return targetDate.toISOString();
+    } catch (error) {
+      logger.error(`计算农历定时时间失败: ${task.id}`, error);
+      return null;
+    }
+  }
+
+  /**
+   * 计算条件触发执行时间
+   */
+  private calculateConditionalScheduleTime(task: Task): string | null {
+    try {
+      const config = task.triggerConfig;
+      
+      // 简化为立即执行，实际项目中应根据系统状态判断
+      const now = new Date();
+      
+      if (config.conditionType === 'system_startup' || config.conditionType === 'system_resume') {
+        // 系统启动/恢复后延迟执行
+        const delay = config.conditionDelay || 0;
+        return new Date(now.getTime() + delay).toISOString();
+      }
+      
+      // 其他条件类型需要监控系统状态
+      return null;
+    } catch (error) {
+      logger.error(`计算条件触发时间失败: ${task.id}`, error);
+      return null;
+    }
+  }
+
+  /**
+   * 计算可视化定时执行时间
+   */
+  private calculateVisualScheduleTime(task: Task): string | null {
+    try {
+      const now = new Date();
+      const config = task.triggerConfig;
+      
+      if (!config.visualType) return null;
+
+      switch (config.visualType) {
+        case 'once':
+          // 一次性定时：每天固定时间
+          if (config.visualTime) {
+            const [hours, minutes] = config.visualTime.split(':').map(Number);
+            const targetTime = new Date(now);
+            targetTime.setHours(hours, minutes, 0, 0);
+            
+            if (targetTime <= now) {
+              targetTime.setDate(targetTime.getDate() + 1);
+            }
+            return targetTime.toISOString();
+          }
+          break;
+
+        case 'minute':
+          // 分钟循环
+          const minuteInterval = (config.visualValue || 1) * 60 * 1000;
+          const nextMinuteTime = new Date(now.getTime() + minuteInterval);
+          return nextMinuteTime.toISOString();
+
+        case 'hour':
+          // 小时循环
+          const hourInterval = (config.visualValue || 1) * 60 * 60 * 1000;
+          const nextHourTime = new Date(now.getTime() + hourInterval);
+          return nextHourTime.toISOString();
+
+        case 'day':
+          // 天循环
+          if (config.visualTime) {
+            const [hours, minutes] = config.visualTime.split(':').map(Number);
+            const days = config.visualValue || 1;
+            let targetTime = new Date(now);
+            targetTime.setDate(targetTime.getDate() + days);
+            targetTime.setHours(hours, minutes, 0, 0);
+            
+            if (targetTime <= now) {
+              targetTime.setDate(targetTime.getDate() + days);
+            }
+            return targetTime.toISOString();
+          }
+          break;
+
+        case 'week':
+          // 周循环
+          if (config.visualTime && config.visualDays && config.visualDays.length > 0) {
+            const [hours, minutes] = config.visualTime.split(':').map(Number);
+            const currentDay = now.getDay();
+            const nextDay = Math.min(...config.visualDays.filter(d => d > currentDay));
+            
+            let targetTime = new Date(now);
+            if (nextDay > currentDay) {
+              targetTime.setDate(targetTime.getDate() + (nextDay - currentDay));
+            } else {
+              targetTime.setDate(targetTime.getDate() + (7 - currentDay + nextDay));
+            }
+            targetTime.setHours(hours, minutes, 0, 0);
+            return targetTime.toISOString();
+          }
+          break;
+
+        case 'month':
+          // 月循环
+          if (config.visualTime && config.visualDate) {
+            const [hours, minutes] = config.visualTime.split(':').map(Number);
+            let targetTime = new Date(now);
+            targetTime.setMonth(targetTime.getMonth() + 1);
+            targetTime.setDate(config.visualDate);
+            targetTime.setHours(hours, minutes, 0, 0);
+            
+            if (targetTime <= now) {
+              targetTime.setMonth(targetTime.getMonth() + 1);
+            }
+            return targetTime.toISOString();
+          }
+          break;
+      }
+      
+      return null;
+    } catch (error) {
+      logger.error(`计算可视化定时时间失败: ${task.id}`, error);
+      return null;
+    }
+  }
+
+  /**
+   * 计算农历定时执行时间
+   */
+  private calculateLunarScheduleTime(task: Task): string | null {
+    try {
+      const config = task.triggerConfig;
+      if (!config.lunarYear || !config.lunarMonth || !config.lunarDay) return null;
+
+      // 简化处理：将农历日期转换为公历日期
+      // 实际项目中应使用专业的农历计算库
+      const now = new Date();
+      
+      // 计算当前年份对应的农历日期（简化版）
+      const targetDate = new Date(now.getFullYear(), config.lunarMonth - 1, config.lunarDay);
+      
+      if (targetDate <= now) {
+        targetDate.setFullYear(targetDate.getFullYear() + 1);
+      }
+      
+      return targetDate.toISOString();
+    } catch (error) {
+      logger.error(`计算农历定时时间失败: ${task.id}`, error);
+      return null;
+    }
+  }
+
+  /**
+   * 计算条件触发执行时间
+   */
+  private calculateConditionalScheduleTime(task: Task): string | null {
+    try {
+      const config = task.triggerConfig;
+      
+      // 简化为立即执行，实际项目中应根据系统状态判断
+      const now = new Date();
+      
+      if (config.conditionType === 'system_startup' || config.conditionType === 'system_resume') {
+        // 系统启动/恢复后延迟执行
+        const delay = config.conditionDelay || 0;
+        return new Date(now.getTime() + delay).toISOString();
+      }
+      
+      // 其他条件类型需要监控系统状态
+      return null;
+    } catch (error) {
+      logger.error(`计算条件触发时间失败: ${task.id}`, error);
       return null;
     }
   }
