@@ -1,0 +1,127 @@
+{
+  "常用任务示例": {
+    "系统监控任务": [
+      {
+        "name": "系统状态检查",
+        "description": "每小时检查一次系统状态",
+        "triggerType": "cron",
+        "triggerConfig": {
+          "cron": "0 * * * *"
+        },
+        "type": "command",
+        "config": {
+          "command": "free -h && df -h"
+        },
+        "category": "系统监控"
+      },
+      {
+        "name": "日志清理",
+        "description": "每天凌晨清理7天前的临时文件",
+        "triggerType": "cron",
+        "triggerConfig": {
+          "cron": "0 2 * * *"
+        },
+        "type": "command",
+        "config": {
+          "command": "find /tmp -type f -mtime +7 -delete"
+        },
+        "category": "系统维护"
+      }
+    ],
+    "HTTP请求任务": [
+      {
+        "name": "健康检查",
+        "description": "每5分钟检查网站可用性",
+        "triggerType": "cron",
+        "triggerConfig": {
+          "cron": "*/5 * * * *"
+        },
+        "type": "http",
+        "config": {
+          "url": "https://api.example.com/health",
+          "method": "GET",
+          "headers": {
+            "Content-Type": "application/json"
+          }
+        },
+        "category": "健康检查"
+      },
+      {
+        "name": "数据同步",
+        "description": "每10分钟同步数据",
+        "triggerType": "cron",
+        "triggerConfig": {
+          "cron": "*/10 * * * *"
+        },
+        "type": "http",
+        "config": {
+          "url": "https://api.example.com/sync",
+          "method": "POST",
+          "headers": {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer YOUR_TOKEN"
+          },
+          "body": {
+            "syncType": "incremental"
+          }
+        },
+        "category": "数据同步"
+      }
+    ],
+    "定时执行任务": [
+      {
+        "name": "日报生成",
+        "description": "每天上午9点生成日报",
+        "triggerType": "cron",
+        "triggerConfig": {
+          "cron": "0 9 * * *"
+        },
+        "type": "command",
+        "config": {
+          "command": "python /scripts/daily_report.py"
+        },
+        "category": "报表"
+      },
+      {
+        "name": "备份任务",
+        "description": "每周日晚上10点执行备份",
+        "triggerType": "cron",
+        "triggerConfig": {
+          "cron": "0 22 * * 0"
+        },
+        "type": "command",
+        "config": {
+          "command": "tar -czf /backup/$(date +%Y%m%d).tar.gz /data"
+        },
+        "category": "备份"
+      }
+    ]
+  },
+  "安全注意事项": {
+    "禁止使用的命令": [
+      "rm -rf",
+      "rm -rf /",
+      "dd if=",
+      ":(){ :|:& };:",
+      "mkfs",
+      "fdisk",
+      "shutdown",
+      "reboot",
+      "halt",
+      "poweroff",
+      "init 0",
+      "init 6",
+      "chmod 777",
+      "chown root",
+      "passwd"
+    ],
+    "推荐的安全实践": [
+      "使用相对路径而非绝对路径",
+      "设置合理的超时时间",
+      "限制任务的最大重试次数",
+      "定期查看执行日志",
+      "避免在命令中包含敏感信息",
+      "使用预执行功能测试任务"
+    ]
+  }
+}

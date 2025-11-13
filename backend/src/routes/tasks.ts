@@ -43,7 +43,15 @@ router.get('/', async (req, res) => {
     const { page = 1, pageSize = 10, status, category } = req.query;
     const db = getDatabase();
     
-    let query = 'SELECT * FROM tasks WHERE 1=1';
+    // 明确指定字段名，包括时间字段并转换为驼峰命名
+    let query = `SELECT 
+      id, name, description, type, config, trigger_type as triggerType, 
+      trigger_config as triggerConfig, status, category, tags, 
+      max_retries as maxRetries, retry_interval as retryInterval, timeout,
+      created_at as createdAt, updated_at as updatedAt,
+      next_execution_time as nextExecutionTime, last_execution_time as lastExecutionTime
+    FROM tasks WHERE 1=1`;
+    
     const params: any[] = [];
     
     if (status) {
@@ -102,7 +110,13 @@ router.get('/:id', async (req, res) => {
     const { id } = req.params;
     const db = getDatabase();
     
-    const task = await db.get<Task>('SELECT * FROM tasks WHERE id = ?', [id]);
+    const task = await db.get<Task>(`SELECT 
+      id, name, description, type, config, trigger_type as triggerType, 
+      trigger_config as triggerConfig, status, category, tags, 
+      max_retries as maxRetries, retry_interval as retryInterval, timeout,
+      created_at as createdAt, updated_at as updatedAt,
+      next_execution_time as nextExecutionTime, last_execution_time as lastExecutionTime
+    FROM tasks WHERE id = ?`, [id]);
     
     if (!task) {
       return res.status(404).json({ error: '任务不存在' });
@@ -209,7 +223,13 @@ router.put('/:id', async (req, res) => {
     const taskData = req.body;
     const db = getDatabase();
     
-    const existingTask = await db.get<Task>('SELECT * FROM tasks WHERE id = ?', [id]);
+    const existingTask = await db.get<Task>(`SELECT 
+      id, name, description, type, config, trigger_type as triggerType, 
+      trigger_config as triggerConfig, status, category, tags, 
+      max_retries as maxRetries, retry_interval as retryInterval, timeout,
+      created_at as createdAt, updated_at as updatedAt,
+      next_execution_time as nextExecutionTime, last_execution_time as lastExecutionTime
+    FROM tasks WHERE id = ?`, [id]);
     if (!existingTask) {
       return res.status(404).json({ error: '任务不存在' });
     }
@@ -320,7 +340,13 @@ router.post('/batch', async (req, res) => {
           [newStatus, new Date().toISOString(), taskId]);
         
         if (newStatus === 'active') {
-          const task = await db.get<Task>('SELECT * FROM tasks WHERE id = ?', [taskId]);
+          const task = await db.get<Task>(`SELECT 
+      id, name, description, type, config, trigger_type as triggerType, 
+      trigger_config as triggerConfig, status, category, tags, 
+      max_retries as maxRetries, retry_interval as retryInterval, timeout,
+      created_at as createdAt, updated_at as updatedAt,
+      next_execution_time as nextExecutionTime, last_execution_time as lastExecutionTime
+    FROM tasks WHERE id = ?`, [taskId]);
           if (task) {
             await taskScheduler.scheduleTask(task);
           }
@@ -334,6 +360,92 @@ router.post('/batch', async (req, res) => {
   } catch (error) {
     logger.error('批量操作失败', error);
     res.status(500).json({ error: '批量操作失败' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/tasks/preview:
+ *   post:
+ *     summary: 预执行任务
+ *     tags: [Tasks]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               type:
+ *                 type: string
+ *                 enum: [http, command, script]
+ *               config:
+ *                 type: object
+ *               triggerType:
+ *                 type: string
+ *                 enum: [cron, interval, date]
+ *               triggerConfig:
+ *                 type: object
+ *               maxRetries:
+ *                 type: number
+ *               retryInterval:
+ *                 type: number
+ *               timeout:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: 预执行结果
+ *       400:
+ *         description: 参数错误
+ */
+router.post('/preview', async (req, res) => {
+  try {
+    const taskData = req.body;
+    
+    // 验证必填参数
+    if (!taskData.name || !taskData.type || !taskData.config) {
+      return res.status(400).json({ error: '任务名称、类型和配置是必填项' });
+    }
+    
+    // 创建模拟任务对象用于预执行
+    const previewTask: Task = {
+      id: 'preview-' + Date.now(),
+      name: taskData.name,
+      description: taskData.description,
+      type: taskData.type,
+      config: taskData.config,
+      triggerType: taskData.triggerType || 'cron',
+      triggerConfig: taskData.triggerConfig || {},
+      status: 'active',
+      category: taskData.category,
+      tags: taskData.tags || [],
+      maxRetries: taskData.maxRetries || 3,
+      retryInterval: taskData.retryInterval || 5000,
+      timeout: taskData.timeout || 30000,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    
+    // 执行任务逻辑（不记录到数据库）
+    const result = await taskScheduler.executeTaskLogic(previewTask);
+    
+    res.json({
+      success: true,
+      data: result,
+      message: '预执行成功'
+    });
+    
+  } catch (error) {
+    logger.error('预执行失败', error);
+    res.status(500).json({ 
+      success: false, 
+      error: (error as Error).message,
+      message: '预执行失败'
+    });
   }
 });
 

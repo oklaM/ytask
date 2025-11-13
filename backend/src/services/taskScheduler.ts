@@ -14,10 +14,13 @@ class TaskScheduler {
     
     // 从数据库加载所有激活的任务
     const db = getDatabase();
-    const activeTasks = await db.all<Task[]>(
-      'SELECT * FROM tasks WHERE status = ?',
-      ['active']
-    );
+    const activeTasks = await db.all<Task[]>(`SELECT 
+      id, name, description, type, config, trigger_type as triggerType, 
+      trigger_config as triggerConfig, status, category, tags, 
+      max_retries as maxRetries, retry_interval as retryInterval, timeout,
+      created_at as createdAt, updated_at as updatedAt,
+      next_execution_time as nextExecutionTime, last_execution_time as lastExecutionTime
+    FROM tasks WHERE status = ?`, ['active']);
 
     for (const task of activeTasks) {
       await this.scheduleTask(task);
@@ -32,6 +35,7 @@ class TaskScheduler {
       await this.stopTask(task.id);
 
       let scheduledTask: cron.ScheduledTask | null = null;
+      let nextExecutionTime: string | null = null;
 
       if (task.triggerType === 'cron' && task.triggerConfig.cron) {
         // Cron表达式调度
@@ -44,6 +48,9 @@ class TaskScheduler {
 
         scheduledTask.start();
         this.scheduledTasks.set(task.id, scheduledTask);
+        
+        // 计算下次执行时间
+        nextExecutionTime = this.calculateNextExecutionTime(task);
 
       } else if (task.triggerType === 'interval' && task.triggerConfig.interval) {
         // 间隔调度
@@ -52,6 +59,10 @@ class TaskScheduler {
         }, task.triggerConfig.interval);
 
         this.runningTasks.set(task.id, timeoutId);
+        
+        // 计算下次执行时间
+        nextExecutionTime = new Date(Date.now() + task.triggerConfig.interval).toISOString();
+        
       } else if (task.triggerType === 'date' && task.triggerConfig.date) {
         // 特定时间点调度
         const targetTime = new Date(task.triggerConfig.date).getTime();
@@ -64,10 +75,20 @@ class TaskScheduler {
           }, delay);
 
           this.runningTasks.set(task.id, timeoutId);
+          nextExecutionTime = task.triggerConfig.date;
         }
       }
 
-      logger.info(`任务 ${task.name} (${task.id}) 已调度`);
+      // 更新下次执行时间到数据库
+      if (nextExecutionTime) {
+        const db = getDatabase();
+        await db.run(
+          'UPDATE tasks SET next_execution_time = ?, updated_at = ? WHERE id = ?',
+          [nextExecutionTime, new Date().toISOString(), task.id]
+        );
+      }
+
+      logger.info(`任务 ${task.name} (${task.id}) 已调度，下次执行时间: ${nextExecutionTime || '无'}`);
       return true;
     } catch (error) {
       logger.error(`调度任务失败: ${task.id}`, error);
@@ -90,24 +111,67 @@ class TaskScheduler {
       this.runningTasks.delete(taskId);
     }
 
+    // 清除下次执行时间
+    const db = getDatabase();
+    await db.run(
+      'UPDATE tasks SET next_execution_time = NULL, updated_at = ? WHERE id = ?',
+      [new Date().toISOString(), taskId]
+    );
+
     logger.info(`任务 ${taskId} 已停止`);
+  }
+
+  /**
+   * 计算下次执行时间
+   */
+  private calculateNextExecutionTime(task: Task): string | null {
+    try {
+      if (task.triggerType === 'cron' && task.triggerConfig.cron) {
+        // 使用cron库计算下次执行时间
+        const cronParser = require('cron-parser');
+        const interval = cronParser.parseExpression(task.triggerConfig.cron, {
+          tz: 'Asia/Shanghai'
+        });
+        const nextDate = interval.next();
+        return nextDate.toISOString();
+      } else if (task.triggerType === 'interval' && task.triggerConfig.interval) {
+        // 间隔调度：当前时间 + 间隔时间
+        const nextTime = Date.now() + task.triggerConfig.interval;
+        return new Date(nextTime).toISOString();
+      } else if (task.triggerType === 'date' && task.triggerConfig.date) {
+        // 特定时间点调度：只执行一次，所以下次执行时间为空
+        const targetTime = new Date(task.triggerConfig.date).getTime();
+        const now = Date.now();
+        
+        if (targetTime > now) {
+          return task.triggerConfig.date;
+        }
+        return null;
+      }
+      
+      return null;
+    } catch (error) {
+      logger.error(`计算下次执行时间失败: ${task.id}`, error);
+      return null;
+    }
   }
 
   async executeTask(task: Task) {
     const executionId = uuidv4();
     const db = getDatabase();
+    const startedAt = new Date();
 
     try {
       // 记录开始执行
       await db.run(
         'INSERT INTO execution_logs (id, task_id, status, started_at, retry_count) VALUES (?, ?, ?, ?, ?)',
-        [executionId, task.id, 'running', new Date().toISOString(), 0]
+        [executionId, task.id, 'running', startedAt.toISOString(), 0]
       );
 
       // 更新任务信息
       await db.run(
         'UPDATE tasks SET last_execution_time = ?, updated_at = ? WHERE id = ?',
-        [new Date().toISOString(), new Date().toISOString(), task.id]
+        [startedAt.toISOString(), startedAt.toISOString(), task.id]
       );
 
       logger.info(`开始执行任务: ${task.name} (${task.id})`);
@@ -116,18 +180,22 @@ class TaskScheduler {
       const result = await this.executeTaskLogic(task);
 
       // 记录执行成功
+      const finishedAt = new Date();
+      const duration = finishedAt.getTime() - startedAt.getTime();
       await db.run(
         'UPDATE execution_logs SET status = ?, finished_at = ?, duration = ?, result = ? WHERE id = ?',
-        ['success', new Date().toISOString(), Date.now() - new Date().getTime(), JSON.stringify(result), executionId]
+        ['success', finishedAt.toISOString(), duration, JSON.stringify(result), executionId]
       );
 
       logger.info(`任务执行成功: ${task.name} (${task.id})`);
 
     } catch (error) {
       // 记录执行失败
+      const finishedAt = new Date();
+      const duration = finishedAt.getTime() - startedAt.getTime();
       await db.run(
         'UPDATE execution_logs SET status = ?, finished_at = ?, duration = ?, error = ? WHERE id = ?',
-        ['failed', new Date().toISOString(), Date.now() - new Date().getTime(), (error as Error).message, executionId]
+        ['failed', finishedAt.toISOString(), duration, (error as Error).message, executionId]
       );
 
       logger.error(`任务执行失败: ${task.name} (${task.id})`, error);
@@ -137,7 +205,7 @@ class TaskScheduler {
     }
   }
 
-  private async executeTaskLogic(task: Task): Promise<any> {
+  async executeTaskLogic(task: Task): Promise<any> {
     // 模拟不同类型的任务执行
     switch (task.type) {
       case 'http':

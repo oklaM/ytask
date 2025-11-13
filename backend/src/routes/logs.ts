@@ -54,7 +54,10 @@ router.get('/', async (req, res) => {
     const db = getDatabase();
     
     let query = `
-      SELECT l.*, t.name as task_name 
+      SELECT 
+        l.id, l.task_id as taskId, l.status, l.started_at as startedAt, 
+        l.finished_at as finishedAt, l.duration, l.result, l.error, 
+        l.retry_count as retryCount, t.name as taskName
       FROM execution_logs l 
       LEFT JOIN tasks t ON l.task_id = t.id 
       WHERE 1=1

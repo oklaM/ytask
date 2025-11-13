@@ -136,9 +136,22 @@ const TaskList: React.FC = () => {
         time ? dayjs(time).format('YYYY-MM-DD HH:mm:ss') : '--',
     },
     {
+      title: '最后执行时间',
+      dataIndex: 'lastExecutionTime',
+      key: 'lastExecutionTime',
+      render: (time: string) => 
+        time ? dayjs(time).format('YYYY-MM-DD HH:mm:ss') : '--',
+    },
+    {
       title: '创建时间',
       dataIndex: 'createdAt',
       key: 'createdAt',
+      render: (time: string) => dayjs(time).format('YYYY-MM-DD HH:mm:ss'),
+    },
+    {
+      title: '更新时间',
+      dataIndex: 'updatedAt',
+      key: 'updatedAt',
       render: (time: string) => dayjs(time).format('YYYY-MM-DD HH:mm:ss'),
     },
     {

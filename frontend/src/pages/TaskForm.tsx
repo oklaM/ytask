@@ -1,10 +1,65 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Select, Button, Card, Space, InputNumber, message, DatePicker } from 'antd';
+import { Form, Input, Select, Button, Card, Space, InputNumber, message, DatePicker, Modal, Result, Spin, Alert, Typography, Divider, Popover, Tag } from 'antd';
 import { useParams, useNavigate } from 'react-router-dom';
 import { taskApi } from '../services/api';
+import { PlayCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, InfoCircleOutlined, ThunderboltOutlined } from '@ant-design/icons';
 
 const { Option } = Select;
 const { TextArea } = Input;
+
+// 常用的任务示例
+const TASK_EXAMPLES = {
+  cron: [
+    { label: '每天午夜执行', value: '0 0 * * *', desc: '每天凌晨12点执行' },
+    { label: '每小时执行', value: '0 * * * *', desc: '每小时的第0分钟执行' },
+    { label: '每天上午9点', value: '0 9 * * *', desc: '每天上午9点执行' },
+    { label: '每周一上午8点', value: '0 8 * * 1', desc: '每周一上午8点执行' },
+    { label: '每分钟执行', value: '* * * * *', desc: '每分钟执行一次' },
+    { label: '每天9点到18点每2小时', value: '0 9-18/2 * * *', desc: '每天9点到18点，每2小时执行' },
+  ],
+  command: [
+    { label: '查看系统时间', value: 'date', desc: '显示当前系统时间' },
+    { label: '查看磁盘空间', value: 'df -h', desc: '显示磁盘使用情况' },
+    { label: '查看内存使用', value: 'free -h', desc: '显示内存使用情况' },
+    { label: '查看进程列表', value: 'ps aux', desc: '显示运行中的进程' },
+    { label: '网络连通性测试', value: 'ping -c 4 google.com', desc: '测试网络连通性' },
+    { label: '清理临时文件', value: 'find /tmp -type f -mtime +7 -delete', desc: '删除7天前的临时文件' },
+  ],
+  http: [
+    { label: '健康检查', value: 'GET', desc: '简单的GET请求' },
+    { label: '数据提交', value: 'POST', desc: '提交数据的POST请求' },
+    { label: '数据更新', value: 'PUT', desc: '更新数据的PUT请求' },
+    { label: '数据删除', value: 'DELETE', desc: '删除数据的DELETE请求' },
+  ]
+};
+
+// 禁止使用的命令
+const FORBIDDEN_COMMANDS = [
+  'rm -rf',
+  'rm -rf /',
+  'dd if=',
+  ':(){ :|:& };:',
+  'mkfs',
+  'fdisk',
+  'shutdown',
+  'reboot',
+  'halt',
+  'poweroff',
+  'init 0',
+  'init 6',
+  'chmod 777',
+  'chown root',
+  'passwd',
+];
+
+// 安全提示
+const SECURITY_TIPS = [
+  '请勿使用危险命令，如rm -rf、shutdown等',
+  '定期检查任务的执行日志和结果',
+  '建议设置合理的超时时间和重试次数',
+  '对于重要的任务，建议先进行预执行测试',
+  '建议对敏感信息进行加密处理',
+];
 
 const TaskForm: React.FC = () => {
   const { id } = useParams();
@@ -14,6 +69,12 @@ const TaskForm: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [triggerType, setTriggerType] = useState<'cron' | 'interval' | 'date'>('cron');
   const [taskType, setTaskType] = useState<'http' | 'command' | 'script'>('command');
+  
+  // 预执行相关状态
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [previewResult, setPreviewResult] = useState<any>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -40,6 +101,16 @@ const TaskForm: React.FC = () => {
   const handleSubmit = async (values: any) => {
     setLoading(true);
     try {
+      // 安全检查
+      if (taskType === 'command' && values.command) {
+        const safetyCheck = checkCommandSafety(values.command);
+        if (!safetyCheck.safe) {
+          message.error(safetyCheck.reason || '检测到危险命令，请检查后重试');
+          setLoading(false);
+          return;
+        }
+      }
+
       const taskData = {
         ...values,
         triggerType,
@@ -64,6 +135,48 @@ const TaskForm: React.FC = () => {
     }
   };
 
+  // 预执行任务
+  const handlePreview = async () => {
+    try {
+      const values = await form.validateFields();
+      
+      setPreviewLoading(true);
+      setPreviewError(null);
+      setPreviewResult(null);
+      
+      const taskData = {
+        ...values,
+        triggerType,
+        type: taskType,
+        triggerConfig: getTriggerConfig(values),
+        config: getTaskConfig(values)
+      };
+
+      const result = await taskApi.previewTask(taskData);
+      
+      if (result.success) {
+        setPreviewResult(result.data);
+        setPreviewVisible(true);
+        message.success('预执行成功！');
+      } else {
+        setPreviewError(result.error || '预执行失败');
+        setPreviewVisible(true);
+        message.error(result.message || '预执行失败');
+      }
+    } catch (error: any) {
+      // 表单验证错误
+      if (error.errorFields) {
+        message.error('请填写完整的任务配置信息');
+      } else {
+        setPreviewError(error.message || '预执行失败');
+        setPreviewVisible(true);
+        message.error('预执行失败');
+      }
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   const getTriggerConfig = (values: any) => {
     switch (triggerType) {
       case 'cron':
@@ -75,6 +188,40 @@ const TaskForm: React.FC = () => {
       default:
         return {};
     }
+  };
+
+  // 应用任务示例
+  const applyExample = (type: string, example: any) => {
+    switch (type) {
+      case 'cron':
+        form.setFieldsValue({ cronExpression: example.value });
+        message.success(`已应用: ${example.label}`);
+        break;
+      case 'command':
+        form.setFieldsValue({ command: example.value });
+        message.success(`已应用: ${example.label}`);
+        break;
+      case 'http':
+        form.setFieldsValue({ httpMethod: example.value });
+        message.success(`已应用: ${example.label}`);
+        break;
+    }
+  };
+
+  // 检查命令安全性
+  const checkCommandSafety = (command: string) => {
+    if (!command) return true;
+    
+    const lowerCommand = command.toLowerCase();
+    for (const forbidden of FORBIDDEN_COMMANDS) {
+      if (lowerCommand.includes(forbidden.toLowerCase())) {
+        return {
+          safe: false,
+          reason: `检测到危险命令: ${forbidden}`
+        };
+      }
+    }
+    return { safe: true };
   };
 
   const getTaskConfig = (values: any) => {
@@ -151,14 +298,46 @@ const TaskForm: React.FC = () => {
           </Form.Item>
 
           {triggerType === 'cron' && (
-            <Form.Item
-              name="cronExpression"
-              label="Cron表达式"
-              rules={[{ required: true, message: '请输入Cron表达式' }]}
-              extra="例如：0 0 * * *（每天午夜执行）"
-            >
-              <Input placeholder="请输入Cron表达式" />
-            </Form.Item>
+            <>
+              <Form.Item
+                name="cronExpression"
+                label={
+                  <span>
+                    Cron表达式
+                    <Popover 
+                      title="常用Cron表达式示例" 
+                      content={
+                        <div style={{ maxWidth: 400 }}>
+                          {TASK_EXAMPLES.cron.map((example, index) => (
+                            <div key={index} style={{ marginBottom: 8 }}>
+                              <Button 
+                                type="link" 
+                                size="small" 
+                                onClick={() => applyExample('cron', example)}
+                                icon={<ThunderboltOutlined />}
+                              >
+                                {example.label}
+                              </Button>
+                              <br />
+                              <Tag color="blue">{example.value}</Tag>
+                              <span style={{ fontSize: 12, color: '#666' }}> - {example.desc}</span>
+                            </div>
+                          ))}
+                        </div>
+                      }
+                    >
+                      <Button type="link" size="small" icon={<InfoCircleOutlined />}>
+                        查看示例
+                      </Button>
+                    </Popover>
+                  </span>
+                }
+                rules={[{ required: true, message: '请输入Cron表达式' }]}
+                extra="例如：0 0 * * *（每天午夜执行）"
+              >
+                <Input placeholder="请输入Cron表达式" />
+              </Form.Item>
+            </>
           )}
 
           {triggerType === 'interval' && (
@@ -215,7 +394,37 @@ const TaskForm: React.FC = () => {
               </Form.Item>
               <Form.Item
                 name="httpMethod"
-                label="请求方法"
+                label={
+                  <span>
+                    请求方法
+                    <Popover 
+                      title="HTTP请求方法示例" 
+                      content={
+                        <div style={{ maxWidth: 300 }}>
+                          {TASK_EXAMPLES.http.map((example, index) => (
+                            <div key={index} style={{ marginBottom: 8 }}>
+                              <Button 
+                                type="link" 
+                                size="small" 
+                                onClick={() => applyExample('http', example)}
+                                icon={<ThunderboltOutlined />}
+                              >
+                                {example.label}
+                              </Button>
+                              <br />
+                              <Tag color="purple">{example.value}</Tag>
+                              <span style={{ fontSize: 12, color: '#666' }}> - {example.desc}</span>
+                            </div>
+                          ))}
+                        </div>
+                      }
+                    >
+                      <Button type="link" size="small" icon={<InfoCircleOutlined />}>
+                        查看示例
+                      </Button>
+                    </Popover>
+                  </span>
+                }
                 initialValue="GET"
               >
                 <Select>
@@ -241,13 +450,76 @@ const TaskForm: React.FC = () => {
           )}
 
           {taskType === 'command' && (
-            <Form.Item
-              name="command"
-              label="命令"
-              rules={[{ required: true, message: '请输入命令' }]}
-            >
-              <TextArea rows={3} placeholder="请输入要执行的命令" />
-            </Form.Item>
+            <>
+              <Form.Item
+                name="command"
+                label={
+                  <span>
+                    命令
+                    <Popover 
+                      title="常用命令示例" 
+                      content={
+                        <div style={{ maxWidth: 400 }}>
+                          {TASK_EXAMPLES.command.map((example, index) => (
+                            <div key={index} style={{ marginBottom: 8 }}>
+                              <Button 
+n                                type="link" 
+                                size="small" 
+                                onClick={() => applyExample('command', example)}
+                                icon={<ThunderboltOutlined />}
+                              >
+                                {example.label}
+                              </Button>
+                              <br />
+                              <Tag color="green">{example.value}</Tag>
+                              <span style={{ fontSize: 12, color: '#666' }}> - {example.desc}</span>
+                            </div>
+                          ))}
+                          <Divider />
+                          <Alert 
+                            message="安全提示" 
+                            description="请勿使用危险命令，如rm -rf、shutdown等"
+                            type="warning" 
+                            showIcon 
+                          />
+                        </div>
+                      }
+                    >
+                      <Button type="link" size="small" icon={<InfoCircleOutlined />}>
+                        查看示例
+                      </Button>
+                    </Popover>
+                  </span>
+                }
+                rules={[{ 
+                  required: true, 
+                  message: '请输入命令' 
+                }, {
+                  validator: (_, value) => {
+                    if (!value) return Promise.resolve();
+                    const safetyCheck = checkCommandSafety(value);
+                    if (!safetyCheck.safe) {
+                      return Promise.reject(new Error(safetyCheck.reason));
+                    }
+                    return Promise.resolve();
+                  }
+                }]}
+                extra={
+                  <div>
+                    <div>请输入要执行的命令</div>
+                    <Alert 
+                      message="安全提示" 
+                      description="禁止使用危险命令，如rm -rf、shutdown、poweroff等"
+                      type="warning" 
+                      showIcon 
+                      style={{ marginTop: 8 }}
+                    />
+                  </div>
+                }
+              >
+                <TextArea rows={3} placeholder="请输入要执行的命令" />
+              </Form.Item>
+            </>
           )}
 
           {taskType === 'script' && (
@@ -298,7 +570,117 @@ const TaskForm: React.FC = () => {
             </Button>
           </Space>
         </Form.Item>
+
+        {/* 安全提示区域 */}
+        <Card title="安全提示" className="task-form-section">
+          <Alert 
+            message="任务安全执行指南" 
+            description={
+              <div>
+                <p><strong>安全注意事项：</strong></p>
+                <ul style={{ marginLeft: 20 }}>
+                  {SECURITY_TIPS.map((tip, index) => (
+                    <li key={index}>{tip}</li>
+                  ))}
+                </ul>
+                <p><strong>禁止使用的命令示例：</strong></p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                  {FORBIDDEN_COMMANDS.slice(0, 6).map((cmd, index) => (
+                    <Tag key={index} color="red">{cmd}</Tag>
+                  ))}
+                </div>
+                <p style={{ fontSize: 12, color: '#666' }}>
+                  * 系统会自动检测并阻止危险命令的执行
+                </p>
+              </div>
+            }
+            type="warning" 
+            style={{ marginBottom: 16 }}
+          />
+        </Card>
+
+        {/* 预执行区域 */}
+        <Card title="预执行测试" className="task-form-section">
+          <Alert 
+            message="点击预执行按钮可以测试当前配置的任务是否能够正常执行" 
+            type="info" 
+            style={{ marginBottom: 16 }}
+          />
+          <Space>
+            <Button 
+              type="dashed" 
+              icon={<PlayCircleOutlined />} 
+              loading={previewLoading}
+              onClick={handlePreview}
+            >
+              预执行任务
+            </Button>
+            {previewError && (
+              <Alert 
+                message={`预执行失败: ${previewError}`} 
+                type="error" 
+                closable
+                onClose={() => setPreviewError(null)}
+              />
+            )}
+          </Space>
+        </Card>
       </Form>
+
+      {/* 预执行结果弹窗 */}
+      <Modal
+        title="预执行结果"
+        open={previewVisible}
+        onCancel={() => setPreviewVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setPreviewVisible(false)}>
+            关闭
+          </Button>,
+          <Button 
+            key="retry" 
+            type="primary" 
+            onClick={handlePreview}
+            loading={previewLoading}
+          >
+            重新预执行
+          </Button>
+        ]}
+        width={800}
+      >
+        {previewResult ? (
+          <div>
+            <Result
+              icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
+              title="预执行成功"
+              subTitle="任务配置正确，可以正常执行"
+            />
+            <Card title="执行结果详情" size="small">
+              <Typography>
+                <Typography.Paragraph>
+                  <strong>任务类型:</strong> {taskType}
+                </Typography.Paragraph>
+                <Typography.Paragraph>
+                  <strong>执行结果:</strong>
+                </Typography.Paragraph>
+                <pre style={{ background: '#f5f5f5', padding: '10px', borderRadius: '4px', fontSize: '12px' }}>
+                  {JSON.stringify(previewResult, null, 2)}
+                </pre>
+              </Typography>
+            </Card>
+          </div>
+        ) : previewError ? (
+          <Result
+            icon={<CloseCircleOutlined style={{ color: '#ff4d4f' }} />}
+            title="预执行失败"
+            subTitle={previewError}
+          />
+        ) : (
+          <div style={{ textAlign: 'center' }}>
+            <Spin size="large" />
+            <div style={{ marginTop: 16 }}>正在执行预执行任务...</div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { Table, Tag, DatePicker, Select, Input, Button } from 'antd';
+import { Table, Tag, Space, message, Input, Select, DatePicker, Button, Modal, Typography } from 'antd';
 import { useRequest } from 'ahooks';
-import { logApi } from '../services/api';
+import { logsApi } from '../services/api';
+import { ExecutionLog } from '../types';
 import dayjs from 'dayjs';
+import { SearchOutlined, FileTextOutlined } from '@ant-design/icons';
 
 const { RangePicker } = DatePicker;
 const { Option } = Select;
-const { Search } = Input;
+const { Text } = Typography;
 
 const ExecutionLogs: React.FC = () => {
   const [searchParams, setSearchParams] = useState({
@@ -18,8 +20,11 @@ const ExecutionLogs: React.FC = () => {
     pageSize: 20
   });
 
-  const { data: logsData, loading } = useRequest(
-    () => logApi.getLogs(searchParams),
+  const [logDetail, setLogDetail] = useState<ExecutionLog | null>(null);
+  const [detailVisible, setDetailVisible] = useState(false);
+
+  const { data: logsData, loading, run: refreshLogs } = useRequest(
+    () => logsApi.getLogs(searchParams),
     {
       refreshDeps: [searchParams]
     }
@@ -51,11 +56,25 @@ const ExecutionLogs: React.FC = () => {
     }
   };
 
+  const formatDuration = (duration: number) => {
+    if (!duration) return '--';
+    if (duration < 1000) {
+      return `${duration}ms`;
+    }
+    return `${(duration / 1000).toFixed(2)}s`;
+  };
+
+  const showLogDetail = (log: ExecutionLog) => {
+    setLogDetail(log);
+    setDetailVisible(true);
+  };
+
   const columns = [
     {
       title: '任务名称',
       dataIndex: 'taskName',
       key: 'taskName',
+      render: (name: string) => name || '--',
     },
     {
       title: '状态',
@@ -84,8 +103,7 @@ const ExecutionLogs: React.FC = () => {
       title: '持续时间',
       dataIndex: 'duration',
       key: 'duration',
-      render: (duration: number) => 
-        duration ? `${(duration / 1000).toFixed(2)}秒` : '--',
+      render: (duration: number) => formatDuration(duration),
     },
     {
       title: '重试次数',
@@ -94,52 +112,42 @@ const ExecutionLogs: React.FC = () => {
       render: (count: number) => count || 0,
     },
     {
-      title: '错误信息',
-      dataIndex: 'error',
-      key: 'error',
-      render: (error: string) => 
-        error ? (
-          <span style={{ color: '#ff4d4f', maxWidth: 200, display: 'inline-block' }}>
-            {error}
-          </span>
-        ) : '--',
+      title: '操作',
+      key: 'action',
+      render: (_: any, record: ExecutionLog) => (
+        <Space>
+          <Button 
+            type="link" 
+            icon={<FileTextOutlined />}
+            onClick={() => showLogDetail(record)}
+          >
+            详情
+          </Button>
+        </Space>
+      ),
     },
   ];
 
-  const handleDateChange = (dates: any) => {
-    if (dates && dates.length === 2) {
-      setSearchParams({
-        ...searchParams,
-        startDate: dates[0].toISOString(),
-        endDate: dates[1].toISOString(),
-        page: 1
-      });
-    } else {
-      setSearchParams({
-        ...searchParams,
-        startDate: '',
-        endDate: '',
-        page: 1
-      });
-    }
-  };
-
   return (
     <div>
-      <h1 style={{ marginBottom: 24 }}>执行日志</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h1>执行历史</h1>
+      </div>
 
       {/* 搜索和筛选 */}
       <div style={{ marginBottom: 16, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <RangePicker
-          showTime
-          onChange={handleDateChange}
-          style={{ width: 300 }}
+        <Input
+          placeholder="任务ID"
+          style={{ width: 200 }}
+          value={searchParams.taskId}
+          onChange={(e) => setSearchParams({...searchParams, taskId: e.target.value, page: 1})}
         />
         
         <Select
           placeholder="状态筛选"
           style={{ width: 120 }}
           allowClear
+          value={searchParams.status || undefined}
           onChange={(value) => setSearchParams({...searchParams, status: value || '', page: 1})}
         >
           <Option value="success">成功</Option>
@@ -147,23 +155,34 @@ const ExecutionLogs: React.FC = () => {
           <Option value="running">执行中</Option>
         </Select>
 
-        <Search
-          placeholder="搜索任务名称"
-          style={{ width: 200 }}
-          onSearch={(value) => setSearchParams({...searchParams, taskId: value, page: 1})}
+        <RangePicker
+          showTime
+          placeholder={['开始时间', '结束时间']}
+          onChange={(dates) => {
+            if (dates && dates[0] && dates[1]) {
+              setSearchParams({
+                ...searchParams,
+                startDate: dates[0].toISOString(),
+                endDate: dates[1].toISOString(),
+                page: 1
+              });
+            } else {
+              setSearchParams({
+                ...searchParams,
+                startDate: '',
+                endDate: '',
+                page: 1
+              });
+            }
+          }}
         />
 
         <Button 
-          onClick={() => setSearchParams({
-            taskId: '',
-            status: '',
-            startDate: '',
-            endDate: '',
-            page: 1,
-            pageSize: 20
-          })}
+          type="primary" 
+          icon={<SearchOutlined />}
+          onClick={() => refreshLogs()}
         >
-          重置筛选
+          搜索
         </Button>
       </div>
 
@@ -188,6 +207,70 @@ const ExecutionLogs: React.FC = () => {
           }
         }}
       />
+
+      {/* 执行详情弹窗 */}
+      <Modal
+        title="执行详情"
+        open={detailVisible}
+        onCancel={() => setDetailVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setDetailVisible(false)}>
+            关闭
+          </Button>
+        ]}
+        width={800}
+      >
+        {logDetail && (
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <Text strong>基本信息</Text>
+              <div style={{ marginTop: 8, padding: '8px 12px', background: '#f5f5f5', borderRadius: 4 }}>
+                <div>任务名称: {logDetail.taskName || '--'}</div>
+                <div>状态: <Tag color={getStatusColor(logDetail.status)}>{getStatusText(logDetail.status)}</Tag></div>
+                <div>开始时间: {dayjs(logDetail.startedAt).format('YYYY-MM-DD HH:mm:ss')}</div>
+                <div>结束时间: {logDetail.finishedAt ? dayjs(logDetail.finishedAt).format('YYYY-MM-DD HH:mm:ss') : '--'}</div>
+                <div>持续时间: {formatDuration(logDetail.duration || 0)}</div>
+                <div>重试次数: {logDetail.retryCount || 0}</div>
+              </div>
+            </div>
+
+            {logDetail.error && (
+              <div style={{ marginBottom: 16 }}>
+                <Text strong>错误信息</Text>
+                <div style={{ 
+                  marginTop: 8, 
+                  padding: '8px 12px', 
+                  background: '#fff2f0', 
+                  border: '1px solid #ffccc7',
+                  borderRadius: 4,
+                  color: '#a8071a'
+                }}>
+                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '12px' }}>
+                    {logDetail.error}
+                  </pre>
+                </div>
+              </div>
+            )}
+
+            {logDetail.result && (
+              <div style={{ marginBottom: 16 }}>
+                <Text strong>执行结果</Text>
+                <div style={{ 
+                  marginTop: 8, 
+                  padding: '8px 12px', 
+                  background: '#f6ffed', 
+                  border: '1px solid #b7eb8f',
+                  borderRadius: 4
+                }}>
+                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '12px' }}>
+                    {JSON.stringify(JSON.parse(logDetail.result), null, 2)}
+                  </pre>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

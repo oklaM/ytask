@@ -64,9 +64,19 @@ export const taskApi = {
   batchOperate: (action: 'start' | 'pause' | 'delete', taskIds: string[]): Promise<void> => {
     return api.post('/tasks/batch', { action, taskIds });
   },
+
+  // 预执行任务
+  previewTask: (taskData: any): Promise<{
+    success: boolean;
+    data?: any;
+    error?: string;
+    message: string;
+  }> => {
+    return api.post('/tasks/preview', taskData);
+  },
 };
 
-export const logApi = {
+export const logsApi = {
   // 获取执行日志
   getLogs: (params?: {
     taskId?: string;
