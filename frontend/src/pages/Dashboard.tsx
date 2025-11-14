@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Row, Col, Card, Statistic, Table, Tag, Space } from 'antd';
+import { Row, Col, Card, Statistic, Table, Tag, Space, Button, Alert } from 'antd';
 import { useRequest } from 'ahooks';
 import { statsApi } from '../services/api';
 import { taskApi } from '../services/api';
@@ -89,6 +89,25 @@ const Dashboard: React.FC = () => {
   return (
     <div>
       <h1 style={{ marginBottom: 24 }}>系统监控看板</h1>
+      
+      {/* 智能任务解析功能提醒 */}
+      <Alert 
+        message="✨ 新功能：智能任务解析" 
+        description="现在可以使用自然语言描述任务，系统会自动为您配置定时规则和任务类型。体验更智能的任务创建方式！"
+        type="info"
+        showIcon
+        style={{ marginBottom: 24 }}
+        action={
+          <Space>
+            <Button type="link" size="small" href="/smart-examples">
+              查看示例
+            </Button>
+            <Button type="link" size="small" href="/tasks/new">
+              立即体验
+            </Button>
+          </Space>
+        }
+      />
       
       {/* 统计卡片 */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>

@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Select, Button, Card, Space, InputNumber, message, DatePicker, Modal, Result, Spin, Alert, Typography, Divider, Popover, Tag, Tabs, Collapse, Row, Col, Switch } from 'antd';
+import { Form, Input, Select, Button, Card, Space, InputNumber, message, DatePicker, Modal, Result, Spin, Alert, Typography, Divider, Popover, Tag, Tabs } from 'antd';
 import dayjs from 'dayjs';
 import { useParams, useNavigate } from 'react-router-dom';
-import { taskApi, smartTaskApi } from '../services/api';
-import { PlayCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, InfoCircleOutlined, ThunderboltOutlined, RobotOutlined } from '@ant-design/icons';
+import { taskApi } from '../services/api';
+import { PlayCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, InfoCircleOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import VisualTimerSelector from '../components/VisualTimerSelector';
 import LunarCalendarSelector from '../components/LunarCalendarSelector';
 import CountdownTimer from '../components/CountdownTimer';
@@ -67,7 +67,7 @@ const SECURITY_TIPS = [
   '建议对敏感信息进行加密处理',
 ];
 
-const TaskForm: React.FC = () => {
+const TaskFormNew: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [form] = Form.useForm();
@@ -85,9 +85,6 @@ const TaskForm: React.FC = () => {
 
   // 智能解析相关状态
   const [parsingResult, setParsingResult] = useState<any>(null);
-  const [smartDescription, setSmartDescription] = useState('');
-  const [smartParsing, setSmartParsing] = useState(false);
-  const [parsingLoading, setParsingLoading] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -310,29 +307,6 @@ const TaskForm: React.FC = () => {
     });
     
     message.success(`智能解析成功！识别为${task.type}任务，执行时间：${time.humanReadable}`);
-  };
-
-  // 智能解析任务描述
-  const handleSmartParse = async () => {
-    if (!smartDescription.trim()) {
-      message.warning('请输入任务描述');
-      return;
-    }
-
-    setParsingLoading(true);
-    try {
-      const result = await smartTaskApi.parseComplete(smartDescription);
-      
-      if (result.success && result.data) {
-        handleParseComplete(result.data);
-      } else {
-        message.error(result.error || '智能解析失败');
-      }
-    } catch (error) {
-      message.error('智能解析出错');
-    } finally {
-      setParsingLoading(false);
-    }
   };
 
   // 应用任务示例
@@ -669,7 +643,7 @@ const TaskForm: React.FC = () => {
                           {TASK_EXAMPLES.command.map((example, index) => (
                             <div key={index} style={{ marginBottom: 8 }}>
                               <Button 
-n                                type="link" 
+                                type="link" 
                                 size="small" 
                                 onClick={() => applyExample('command', example)}
                                 icon={<ThunderboltOutlined />}
@@ -891,4 +865,4 @@ n                                type="link"
   );
 };
 
-export default TaskForm;
+export default TaskFormNew;

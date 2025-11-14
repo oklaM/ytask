@@ -7,6 +7,7 @@ import { swaggerSpec } from './config/swagger.js';
 import taskRoutes from './routes/tasks.js';
 import logRoutes from './routes/logs.js';
 import statsRoutes from './routes/stats.js';
+import smartTaskRoutes from './routes/smartTask.js';
 import logger from './utils/logger.js';
 
 const app = express();
@@ -21,6 +22,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/tasks', taskRoutes);
 app.use('/api/logs', logRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/smart', smartTaskRoutes);
 
 // API文档
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));

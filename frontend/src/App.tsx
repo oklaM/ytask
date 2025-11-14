@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import TaskList from './pages/TaskList';
 import TaskForm from './pages/TaskForm';
 import ExecutionLogs from './pages/ExecutionLogs';
+import SmartTaskExamples from './pages/SmartTaskExamples';
 import './App.css';
 
 const App: React.FC = () => {
@@ -20,6 +21,7 @@ const App: React.FC = () => {
             <Route path="/tasks/new" element={<TaskForm />} />
             <Route path="/tasks/:id/edit" element={<TaskForm />} />
             <Route path="/logs" element={<ExecutionLogs />} />
+            <Route path="/smart-examples" element={<SmartTaskExamples />} />
           </Routes>
         </Layout>
       </Router>

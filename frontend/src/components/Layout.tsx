@@ -3,7 +3,8 @@ import { Layout as AntLayout, Menu, Space, Typography } from 'antd';
 import { 
   DashboardOutlined, 
   ScheduleOutlined, 
-  FileTextOutlined
+  FileTextOutlined,
+  RobotOutlined
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 
@@ -28,6 +29,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       key: '/tasks',
       icon: <ScheduleOutlined />,
       label: '任务管理',
+    },
+    {
+      key: '/smart-examples',
+      icon: <RobotOutlined />,
+      label: '智能示例',
     },
     {
       key: '/logs',
